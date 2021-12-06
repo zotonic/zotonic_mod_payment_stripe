@@ -1,0 +1,4 @@
+[
+    {stripe_payment_webhook, [ "stripe", "webhook", payment_nr ], controller_stripe_webhook, []},
+    {stripe_payment_redirect, [ "stripe", "ready", payment_nr ], controller_stripe_redirect, []}
+].

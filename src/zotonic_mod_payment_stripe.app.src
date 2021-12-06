@@ -1,0 +1,17 @@
+{application, zotonic_mod_payment_stripe, [
+    {description, "Zotonic module for processing payments using Stripe as a Payment Service Provider."},
+    {vsn, git},
+    {registered, []},
+    {applications, [
+        kernel, stdlib, lager,
+        zotonic_core
+    ]},
+    {env, []},
+    {modules, []},
+    {doc, "doc"},
+    {licenses, ["Apache-2.0"]},
+    {links, [
+        {"Website", "http://zotonic.com/"},
+        {"GitHub", "https://github.com/zotonic/zotonic_mod_payment_stripe"}
+    ]}
+]}.
