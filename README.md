@@ -19,6 +19,7 @@ The following configuration keys can be set:
 You can find all keys at: https://dashboard.stripe.com/developers
 
 The URL for the webhook is https://example.com/stripe/webhook
+You will need to activate the "checkout" (`checkout.session.*`) events.
 
 
 Subscriptions
