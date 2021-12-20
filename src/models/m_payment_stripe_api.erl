@@ -234,8 +234,8 @@ expire_payment_session(SessionId, Context) ->
                     <<"metadata">> := #{
                         <<"payment_nr">> := PaymentNr
                     }
-                }} ->
-                    set_payment_status(PaymentNr, cancelled, DT, Context);
+                } = Session} ->
+                    set_payment_status(PaymentNr, cancelled, DT, Session, Context);
                 {ok, JSON} ->
                     lager:error("[stripe] payment status returns unknown session status for ~p: ~p ~p",
                                 [ SessionId, JSON ]),
@@ -249,63 +249,75 @@ expire_payment_session(SessionId, Context) ->
             Error
     end.
 
-%% @doc Set the payment status from a session id
+%% @doc Set the payment status from a session (map or id)
 %% See also https://stripe.com/docs/api/checkout/sessions/object
--spec sync_payment_session_status(SessionId, Context) -> {ok, {PaymentNr, Status}} | {error, term()}
-    when SessionId :: binary() | undefined,
+-spec sync_payment_session_status(Session, Context) -> {ok, {PaymentNr, Status}} | {error, term()}
+    when Session :: binary() | undefined | map(),
          Context :: z:context(),
          PaymentNr :: binary(),
          Status :: new | pending | paid | cancelled.
 sync_payment_session_status(undefined, _Context) ->
     {error, session_id};
 sync_payment_session_status(SessionId, Context) when is_binary(SessionId) ->
-    sync_payment_session_status_1(fetch_session(SessionId, Context), Context).
+    sync_payment_session_status_1(fetch_session(SessionId, Context), Context);
+sync_payment_session_status(#{ <<"object">> := <<"checkout.session">> } = Session, Context) ->
+    sync_payment_session_status_1({ok, Session}, Context).
 
-sync_payment_session_status_1(Session, Context) ->
+sync_payment_session_status_1({ok, Session}, Context) ->
     DT = calendar:universal_time(),
     case Session of
-        {ok, #{
+        #{
             <<"status">> := <<"open">>,
             <<"metadata">> := #{
                 <<"payment_nr">> := PaymentNr
             }
-        }} ->
+        } ->
             % Checkout not yet started
             {ok, {PaymentNr, new}};
-        {ok, #{
+        #{
             <<"status">> := <<"complete">>,
             <<"payment_status">> := PaymentStatus,
             <<"mode">> := <<"payment">>,
             <<"metadata">> := #{
                 <<"payment_nr">> := PaymentNr
             }
-        }} ->
+        } ->
             case PaymentStatus of
                 <<"unpaid">> ->
                     % Payment in progress
-                    set_payment_status(PaymentNr, pending, DT, Context);
+                    set_payment_status(PaymentNr, pending, DT, Session, Context);
                 <<"paid">> ->
-                    set_payment_status(PaymentNr, paid, DT, Context)
+                    set_payment_status(PaymentNr, paid, DT, Session, Context)
             end;
-        {ok, #{
+        #{
             <<"status">> := <<"expired">>,
             <<"mode">> := <<"payment">>,
             <<"metadata">> := #{
                 <<"payment_nr">> := PaymentNr
             }
-        }} ->
-            set_payment_status(PaymentNr, cancelled, DT, Context);
-        {ok, #{ <<"id">> := SessionId } = JSON} ->
-            lager:error("[stripe] payment status returns unknown session status for ~p: ~p ~p",
-                        [ SessionId, JSON ]),
-            {error, session_data};
-        {error, _} = Error ->
-            Error
-    end.
+        } ->
+            set_payment_status(PaymentNr, cancelled, DT, Session, Context);
+        #{ <<"id">> := SessionId } ->
+            lager:error("[stripe] payment status returns unknown session status for ~p: ~p",
+                        [ SessionId, Session ]),
+            {error, session_data}
+    end;
+sync_payment_session_status_1({error, _} = Error, _Context) ->
+    Error.
 
-set_payment_status(PaymentNr, Status, DT, Context) ->
+
+set_payment_status(PaymentNr, Status, DT, Session, Context) ->
     case m_payment:get(PaymentNr, Context) of
         {ok, #{ <<"id">> := PaymentId }} ->
+            m_payment_log:log(
+                PaymentId,
+                <<"stripe.session">>,
+                #{
+                    <<"psp_module">> => mod_payment_stripe,
+                    <<"psp_external_log_id">> => maps:get(<<"id">>, Session, undefined),
+                    <<"stripe_session">> => Session
+                },
+                Context),
             case mod_payment:set_payment_status(PaymentId, Status, DT, Context) of
                 ok -> {ok, {PaymentNr, Status}};
                 {error, _} = Error -> Error

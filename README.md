@@ -13,8 +13,12 @@ Configuration
 
 The following configuration keys can be set:
 
- * `mod_payment_stripe.secret_key` Set this to the secret API key you can find on your
-   Stripe dashboard at https://dashboard.stripe.com/developers
+ * `mod_payment_stripe.secret_key` Set this to the secret API key.
+ * `mod_payment_stripe.webhook_secret` Set this to the secret used for webhook requests.
+
+You can find all keys at: https://dashboard.stripe.com/developers
+
+The URL for the webhook is https://example.com/stripe/webhook
 
 
 Subscriptions
