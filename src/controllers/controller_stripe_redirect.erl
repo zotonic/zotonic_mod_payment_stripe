@@ -27,6 +27,8 @@
     moved_temporarily/1
     ]).
 
+-include_lib("kernel/include/logger.hrl").
+
 allowed_methods(Context) ->
     {[ <<"GET">>, <<"POST">> ], Context}.
 
@@ -55,7 +57,7 @@ moved_temporarily(Context) ->
                     redirect(payment_psp_cancel, undefined, Context)
             end;
         Status ->
-            lager:warning("[stripe] redirect with unknown status ~p", [ Status ]),
+            ?LOG_WARNING("[stripe] redirect with unknown status ~p", [ Status ]),
             redirect(payment_psp_cancel, undefined, Context)
     end.
 

@@ -35,6 +35,7 @@
     test/1
 ]).
 
+-include_lib("kernel/include/logger.hrl").
 -include_lib("zotonic_core/include/zotonic.hrl").
 -include("zotonic_mod_payment/include/payment.hrl").
 
@@ -174,7 +175,7 @@ create(PaymentId, Context) ->
                     {request_args, Args}
                 ],
                 Context),
-            lager:error("[stripe] API error creating payment for #~p: unknown json ~p",
+            ?LOG_ERROR("[stripe] API error creating payment for #~p: unknown json ~p",
                         [PaymentId, JSON]),
             {error, json};
         {error, Error} ->
@@ -188,7 +189,7 @@ create(PaymentId, Context) ->
                     {request_args, Args}
                 ],
                 Context),
-            lager:error("[stripe] API error creating payment for #~p: ~p", [PaymentId, Error]),
+            ?LOG_ERROR("[stripe] API error creating payment for #~p: ~p", [PaymentId, Error]),
             {error, Error}
     end.
 
@@ -237,8 +238,8 @@ expire_payment_session(SessionId, Context) ->
                 } = Session} ->
                     set_payment_status(PaymentNr, cancelled, DT, Session, Context);
                 {ok, JSON} ->
-                    lager:error("[stripe] payment status returns unknown session status for ~p: ~p ~p",
-                                [ SessionId, JSON ]),
+                    ?LOG_ERROR("[stripe] payment status returns unknown session status for ~p: ~p ~p",
+                              [ SessionId, JSON ]),
                     {error, session_data};
                 {error, _} = Error ->
                     Error
@@ -298,7 +299,7 @@ sync_payment_session_status_1({ok, Session}, Context) ->
         } ->
             set_payment_status(PaymentNr, cancelled, DT, Session, Context);
         #{ <<"id">> := SessionId } ->
-            lager:error("[stripe] payment status returns unknown session status for ~p: ~p",
+            ?LOG_ERROR("[stripe] payment status returns unknown session status for ~p: ~p",
                         [ SessionId, Session ]),
             {error, session_data}
     end;
@@ -323,7 +324,7 @@ set_payment_status(PaymentNr, Status, DT, Session, Context) ->
                 {error, _} = Error -> Error
             end;
         {error, _} = Error ->
-            lager:error("[stripe] status for unknown payment ~p", [ PaymentNr ]),
+            ?LOG_ERROR("[stripe] status for unknown payment ~p", [ PaymentNr ]),
             Error
     end.
 
@@ -373,7 +374,7 @@ api_call(Method, Endpoint, Args, Context) ->
                 post ->
                     {Url, Hs, "application/x-www-form-urlencoded", Body}
             end,
-            lager:debug("Making API call to Stripe: ~p~n", [Request]),
+            ?LOG_DEBUG("Making API call to Stripe: ~p~n", [Request]),
             case httpc:request(
                 Method, Request,
                 [
@@ -401,13 +402,13 @@ api_call(Method, Endpoint, Args, Context) ->
                             end
                     end;
                 {ok, {{_, Code, _}, Headers, Payload}} ->
-                    lager:error("[stripe] for ~p returns ~p: ~p ~p", [ Endpoint, Code, Payload, Headers]),
+                    ?LOG_ERROR("[stripe] for ~p returns ~p: ~p ~p", [ Endpoint, Code, Payload, Headers]),
                     {error, Code};
                 {error, _} = Error ->
                     Error
             end;
         {error, enoent} ->
-            lager:error("[stripe] config mod_payment_stripe.secret_key is not set"),
+            ?LOG_ERROR("[stripe] config mod_payment_stripe.secret_key is not set"),
             {error, api_key_not_set}
     end.
 

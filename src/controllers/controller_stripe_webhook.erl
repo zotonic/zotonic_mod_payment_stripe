@@ -12,6 +12,7 @@
 
 -define(TIMESTAMP_TOLERANCE, 10).
 
+-include_lib("kernel/include/logger.hrl").
 -include_lib("zotonic_core/include/zotonic.hrl").
 
 allowed_methods(Context) ->
@@ -23,7 +24,7 @@ is_authorized(Context) ->
         true ->
             {true, z_context:set(body, Body, Context1)};
         false ->
-            lager:error("[mod_payment_stripe] Stripe webhook: rejected secret."),
+            ?LOG_ERROR("[mod_payment_stripe] Stripe webhook: rejected secret."),
             {<<"Stripe-Webhook-Secret">>, Context1}
     end.
 
@@ -39,7 +40,7 @@ process(<<"POST">>, _AcceptedCT, _ProvidedCT, Context) ->
     end.
 
 handle(<<"ping">>, _Ps, _Context) ->
-    lager:debug("Stripe: pong"),
+    ?LOG_DEBUG("Stripe: pong"),
     ok;
 handle(<<"checkout.session.async_payment_failed">>, Payload, Context) ->
     sync_session(Payload, Context);
@@ -68,8 +69,8 @@ sync_session(#{
             Error
     end;
 sync_session(Payload, _Context) ->
-    lager:error("[mod_payment_stripe] Unknown payload when processing webhook data ~p",
-                [ Payload ]),
+    ?LOG_ERROR("[mod_payment_stripe] Unknown payload when processing webhook data ~p",
+              [ Payload ]),
     {error, payload}.
 
 is_valid_signature(Body, Context) ->

@@ -33,6 +33,7 @@
     observe_payment_psp_status_sync/2
 ]).
 
+-include_lib("kernel/include/logger.hrl").
 -include_lib("zotonic_mod_payment/include/payment.hrl").
 
 init(Context) ->
@@ -70,7 +71,7 @@ observe_payment_psp_status_sync(#payment_psp_status_sync{
         {ok, _} ->
             ok;
         {error, 404} = Error ->
-            lager:warning("[stripe] unknown payment id ~p (~p)", [ PaymentId, StripeSessionId ]),
+            ?LOG_WARNING("[stripe] unknown payment id ~p (~p)", [ PaymentId, StripeSessionId ]),
             Error;
         {error, _} = Error ->
             Error
