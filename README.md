@@ -5,7 +5,7 @@ This is a Payment Service Provider (PSP) module for mod_payment:
 
     https://github.com/zotonic/zotonic_mod_payment
 
-This module interfaces mod_payment to the PSP Sripe (https://stripe.com/)
+This module interfaces mod_payment to the PSP Stripe (https://stripe.com/)
 
 
 Configuration
