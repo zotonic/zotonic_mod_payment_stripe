@@ -88,7 +88,7 @@ observe_payment_psp_status_sync(#payment_psp_status_sync{
         {error, 404} = Error ->
             ?LOG_WARNING(#{
                 in => zotonic_mod_payment_stripe,
-                text => <<"Stripe payment session not found for payment ~p (~p)">>,
+                text => <<"Stripe payment session not found">>,
                 result => error,
                 reason => not_found,
                 payment_id => PaymentId,
