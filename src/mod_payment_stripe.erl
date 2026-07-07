@@ -1,8 +1,9 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2021 Marc Worrell
+%% @copyright 2021-2026 Marc Worrell
 %% @doc Payment PSP module for Stripe
+%% @end
 
-%% Copyright 2021 Marc Worrell
+%% Copyright 2021-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -22,6 +23,14 @@
 -mod_description("Payments using Payment Service Provider Stripe").
 -mod_author("Driebit").
 -mod_depends([ mod_payment ]).
+-mod_config([
+    #{
+        key => secret_key,
+        type => binary,
+        default => <<>>,
+        description => "Stripe secret key"
+    }
+]).
 
 -author("Marc Worrell <marc@worrell.nl>").
 
@@ -52,7 +61,11 @@ init(Context) ->
 
 %% @doc Payment request, make new payment with Stripe, return payment details and a
 %% redirect uri for the user to handle the payment.
-observe_payment_psp_request(#payment_psp_request{ payment_id = PaymentId }, Context) ->
+observe_payment_psp_request(#payment_psp_request{
+        payment_id = PaymentId,
+        preferred_psp_module = PreferredPspModule
+    }, Context) when PreferredPspModule =:= undefined;
+                     PreferredPspModule =:= ?MODULE ->
     m_payment_stripe_api:create(PaymentId, Context).
 
 %% @doc Return the URL where the given payment can be viewed on the Stripe website.
@@ -71,7 +84,14 @@ observe_payment_psp_status_sync(#payment_psp_status_sync{
         {ok, _} ->
             ok;
         {error, 404} = Error ->
-            ?LOG_WARNING("[stripe] unknown payment id ~p (~p)", [ PaymentId, StripeSessionId ]),
+            ?LOG_WARNING(#{
+                in => zotonic_mod_payment_stripe,
+                text => <<"Stripe payment session not found for payment ~p (~p)">>,
+                result => error,
+                reason => not_found,
+                payment_id => PaymentId,
+                stripe_session_id => StripeSessionId
+            }),
             Error;
         {error, _} = Error ->
             Error
