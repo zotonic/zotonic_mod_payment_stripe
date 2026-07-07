@@ -320,7 +320,7 @@ set_payment_status(PaymentNr, Status, DT, Session, Context) ->
                     <<"stripe_session">> => Session
                 },
                 Context),
-            ok = maybe_update_contact(PaymentId, Session, CurrentStatus, Status, Context),
+            _ = maybe_update_contact(PaymentId, Session, CurrentStatus, Status, Context),
             case mod_payment:set_payment_status(PaymentId, Status, DT, Context) of
                 ok -> {ok, {PaymentNr, Status}};
                 {error, _} = Error -> Error
