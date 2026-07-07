@@ -446,7 +446,9 @@ api_call(Method, Endpoint, Args, Context) ->
             ?LOG_DEBUG(#{
                 in => zotonic_mod_payment_stripe,
                 text => <<"Stripe API call">>,
-                request => Request
+                method => Method,
+                endpoint => Endpoint,
+                url => Url
             }),
             case httpc:request(
                 Method, Request,
