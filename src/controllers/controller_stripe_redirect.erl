@@ -1,5 +1,5 @@
 %% @copyright 2021 Marc Worrell
-%% @doc Strips redirect the user with a GET to this controller
+%% @doc Stripe redirects the user with a GET to this controller
 %% after a payment has been done at their HTML gateway.
 %% This controller processes the payment status and then redirects
 %% to either the payment_psp_done or payment_psp_cancel page.
