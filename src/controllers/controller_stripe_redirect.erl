@@ -5,7 +5,7 @@
 %% to either the payment_psp_done or payment_psp_cancel page.
 %% @end
 
-%% Copyright 2021 Marc Worrrell
+%% Copyright 2021 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
