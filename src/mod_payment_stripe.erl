@@ -66,7 +66,9 @@ observe_payment_psp_request(#payment_psp_request{
         preferred_psp_module = PreferredPspModule
     }, Context) when PreferredPspModule =:= undefined;
                      PreferredPspModule =:= ?MODULE ->
-    m_payment_stripe_api:create(PaymentId, Context).
+    m_payment_stripe_api:create(PaymentId, Context);
+observe_payment_psp_request(#payment_psp_request{}, _Context) ->
+    undefined.
 
 %% @doc Return the URL where the given payment can be viewed on the Stripe website.
 observe_payment_psp_view_url(#payment_psp_view_url{ psp_module = ?MODULE, psp_data = Data }, Context) ->
