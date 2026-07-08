@@ -1,6 +1,18 @@
 %% @author Marc Worrell <marc@worrell.nl>
 %% @copyright 2021-2026 Marc Worrell
-%% @doc Payment PSP module for Stripe
+%% @doc Payment PSP module for Stripe.
+%%
+%% Configuration:
+%%
+%% <ul>
+%%   <li><code>mod_payment_stripe.secret_key</code>:
+%%       Stripe secret API key, used for Stripe API requests.</li>
+%%   <li><code>mod_payment_stripe.webhook_secret</code>:
+%%       Stripe webhook signing secret, used to verify incoming webhook requests.</li>
+%% </ul>
+%%
+%% The Stripe webhook URL is <code>/stripe/webhook</code>. Configure it in Stripe
+%% to send the Checkout events (<code>checkout.session.*</code>).
 %% @end
 
 %% Copyright 2021-2026 Marc Worrell
@@ -29,6 +41,12 @@
         type => binary,
         default => <<>>,
         description => "Stripe secret key"
+    },
+    #{
+        key => webhook_secret,
+        type => binary,
+        default => <<>>,
+        description => "Stripe webhook signing secret"
     }
 ]).
 
@@ -56,7 +74,8 @@ init(Context) ->
             end
         end,
         [
-            {secret_key, <<>>}
+            {secret_key, <<>>},
+            {webhook_secret, <<>>}
         ]).
 
 %% @doc Payment request, make new payment with Stripe, return payment details and a
