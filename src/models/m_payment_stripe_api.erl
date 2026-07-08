@@ -93,7 +93,7 @@ api_test(Context) ->
         {<<"line_items[0][price_data][currency]">>, <<"EUR">>},
         {<<"line_items[0][price_data][unit_amount]">>, <<"1234">>},
         {<<"line_items[0][price_data][product_data][name]">>, <<"Payment">>},
-        {<<"line_items[0][description]">>, <<"hello">>},
+        {<<"line_items[0][price_data][product_data][description]">>, <<"hello">>},
         {<<"line_items[0][quantity]">>, <<"1">>},
         {<<"metadata[payment_nr]">>, PaymentNr},
         {<<"metadata[user_id]">>, <<"1">>}
@@ -139,7 +139,7 @@ create(PaymentId, Context) ->
         {<<"line_items[0][price_data][currency]">>, Currency},
         {<<"line_items[0][price_data][unit_amount]">>, erlang:round(Amount*100)},
         {<<"line_items[0][price_data][product_data][name]">>, ?__("Payment", ContextLang)},
-        {<<"line_items[0][description]">>, valid_description( maps:get(<<"description">>, Payment) )},
+        {<<"line_items[0][price_data][product_data][description]">>, valid_description( maps:get(<<"description">>, Payment) )},
         {<<"line_items[0][quantity]">>, <<"1">>},
         {<<"metadata[payment_nr]">>, PaymentNr},
         {<<"metadata[user_id]">>, maps:get(<<"user_id">>, Payment)}
