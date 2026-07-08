@@ -60,7 +60,8 @@ test(Context) ->
         extra_props = [
             {email, <<"marc@worrell.nl">>},
             {name_surname, <<"Pietersen">>}
-        ]
+        ],
+        preferred_psp_module = mod_payment_stripe
     },
     case z_notifier:first(PaymentRequest, Context) of
         #payment_request_redirect{ redirect_uri = RedirectUri } ->
