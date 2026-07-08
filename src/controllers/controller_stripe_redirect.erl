@@ -58,7 +58,14 @@ moved_temporarily(Context) ->
                     redirect(payment_psp_cancel, undefined, Context)
             end;
         Status ->
-            ?LOG_WARNING("[stripe] redirect with unknown status ~p", [ Status ]),
+            ?LOG_WARNING(#{
+                in => zotonic_mod_payment_stripe,
+                text => <<"Stripe redirect with unknown status">>,
+                result => error,
+                reason => unknown_status,
+                status => Status,
+                stripe_session_id => SessionId
+            }),
             redirect(payment_psp_cancel, undefined, Context)
     end.
 

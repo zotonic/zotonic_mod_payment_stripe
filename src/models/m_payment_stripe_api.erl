@@ -176,8 +176,14 @@ create(PaymentId, Context) ->
                     {request_args, Args}
                 ],
                 Context),
-            ?LOG_ERROR("[stripe] API error creating payment for #~p: unknown json ~p",
-                        [PaymentId, JSON]),
+            ?LOG_ERROR(#{
+                in => zotonic_mod_payment_stripe,
+                text => <<"Stripe API returned unexpected payment create response">>,
+                result => error,
+                reason => json,
+                payment_id => PaymentId,
+                response => JSON
+            }),
             {error, json};
         {error, Error} ->
             m_payment_log:log(
@@ -190,7 +196,13 @@ create(PaymentId, Context) ->
                     {request_args, Args}
                 ],
                 Context),
-            ?LOG_ERROR("[stripe] API error creating payment for #~p: ~p", [PaymentId, Error]),
+            ?LOG_ERROR(#{
+                in => zotonic_mod_payment_stripe,
+                text => <<"Stripe API error creating payment">>,
+                result => error,
+                reason => Error,
+                payment_id => PaymentId
+            }),
             {error, Error}
     end.
 
@@ -239,8 +251,14 @@ expire_payment_session(SessionId, Context) ->
                 } = Session} ->
                     set_payment_status(PaymentNr, cancelled, DT, Session, Context);
                 {ok, JSON} ->
-                    ?LOG_ERROR("[stripe] payment status returns unknown session status for ~p: ~p ~p",
-                              [ SessionId, JSON ]),
+                    ?LOG_ERROR(#{
+                        in => zotonic_mod_payment_stripe,
+                        text => <<"Stripe expire session returned unexpected status">>,
+                        result => error,
+                        reason => session_data,
+                        stripe_session_id => SessionId,
+                        stripe_session => JSON
+                    }),
                     {error, session_data};
                 {error, _} = Error ->
                     Error
@@ -300,8 +318,14 @@ sync_payment_session_status_1({ok, Session}, Context) ->
         } ->
             set_payment_status(PaymentNr, cancelled, DT, Session, Context);
         #{ <<"id">> := SessionId } ->
-            ?LOG_ERROR("[stripe] payment status returns unknown session status for ~p: ~p",
-                        [ SessionId, Session ]),
+            ?LOG_ERROR(#{
+                in => zotonic_mod_payment_stripe,
+                text => <<"Stripe payment session has unexpected status">>,
+                result => error,
+                reason => session_data,
+                stripe_session_id => SessionId,
+                stripe_session => Session
+            }),
             {error, session_data}
     end;
 sync_payment_session_status_1({error, _} = Error, _Context) ->
@@ -326,7 +350,14 @@ set_payment_status(PaymentNr, Status, DT, Session, Context) ->
                 {error, _} = Error -> Error
             end;
         {error, _} = Error ->
-            ?LOG_ERROR("[stripe] status for unknown payment ~p", [ PaymentNr ]),
+            ?LOG_ERROR(#{
+                in => zotonic_mod_payment_stripe,
+                text => <<"Stripe status for unknown payment">>,
+                result => error,
+                reason => not_found,
+                payment_nr => PaymentNr,
+                stripe_session_id => maps:get(<<"id">>, Session, undefined)
+            }),
             Error
     end.
 
