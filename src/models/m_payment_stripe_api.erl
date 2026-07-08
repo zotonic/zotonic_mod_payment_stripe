@@ -136,7 +136,6 @@ create(PaymentId, Context) ->
         {<<"locale">>, Language},
         {<<"cancel_url">>, <<CancelUrl/binary, "&session_id={CHECKOUT_SESSION_ID}">>},
         {<<"success_url">>, <<SuccessUrl/binary, "&session_id={CHECKOUT_SESSION_ID}">>},
-        {<<"customer_email">>, Email},
         {<<"line_items[0][price_data][currency]">>, Currency},
         {<<"line_items[0][price_data][unit_amount]">>, erlang:round(Amount*100)},
         {<<"line_items[0][price_data][product_data][name]">>, ?__("Payment", ContextLang)},
@@ -144,7 +143,7 @@ create(PaymentId, Context) ->
         {<<"line_items[0][quantity]">>, <<"1">>},
         {<<"metadata[payment_nr]">>, PaymentNr},
         {<<"metadata[user_id]">>, maps:get(<<"user_id">>, Payment)}
-    ] ++ metadata(Payment),
+    ] ++ customer_email(Email) ++ metadata(Payment),
     case api_call(post, "/v1/checkout/sessions", Args, Context) of
         {ok, #{
             <<"url">> := PaymentUrl,
@@ -221,6 +220,14 @@ metadata(K, Props) when is_map(Props) ->
     end;
 metadata(_, _Props) ->
     [].
+
+
+customer_email(undefined) ->
+    [];
+customer_email(<<>>) ->
+    [];
+customer_email(Email) ->
+    [{<<"customer_email">>, Email}].
 
 
 valid_description(undefined) -> <<>>;
