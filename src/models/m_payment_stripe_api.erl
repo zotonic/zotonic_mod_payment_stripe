@@ -442,7 +442,7 @@ address_props(Address) when is_map(Address) ->
 address_props(_) ->
     #{}.
 
-%% @doc Return the URL to the status page on the buckaroo dashboard
+%% @doc Return the URL to the status page on the Stripe dashboard.
 -spec payment_url( Session, Context ) -> {ok, Url} | {error, term()}
     when Session :: binary() | map(),
          Context :: z:context(),
@@ -450,16 +450,53 @@ address_props(_) ->
 payment_url(SessionId, Context) when is_binary(SessionId) ->
     case fetch_session(SessionId, Context) of
         {ok, Session} ->
-            payment_url(Session, Context);
+            payment_url_fetched(Session);
         {error, _} = Error ->
             Error
     end;
-payment_url(#{ <<"payment_intent">> := PaymentIntent }, _Context) ->
-    Url = iolist_to_binary([
-        "https://dashboard.stripe.com/test/payments/",
-        PaymentIntent
-        ]),
-    {ok, Url}.
+payment_url(Session, Context) when is_map(Session) ->
+    case payment_intent_url(Session) of
+        {error, payment_intent} ->
+            case maps:get(<<"id">>, Session, undefined) of
+                SessionId when is_binary(SessionId), SessionId =/= <<>> ->
+                    payment_url(SessionId, Context);
+                _ ->
+                    {error, payment_intent}
+            end;
+        Result ->
+            Result
+    end.
+
+payment_url_fetched(Session) ->
+    case payment_intent_url(Session) of
+        {ok, _Url} = Result ->
+            Result;
+        {error, payment_intent} ->
+            checkout_session_url(Session)
+    end.
+
+payment_intent_url(#{ <<"payment_intent">> := PaymentIntent } = Session)
+    when is_binary(PaymentIntent), PaymentIntent =/= <<>> ->
+    {ok, dashboard_url(Session, [<<"payments/">>, PaymentIntent])};
+payment_intent_url(_Session) ->
+    {error, payment_intent}.
+
+checkout_session_url(#{ <<"id">> := SessionId } = Session)
+    when is_binary(SessionId), SessionId =/= <<>> ->
+    {ok, dashboard_url(Session, [<<"checkout/sessions/">>, SessionId])};
+checkout_session_url(_Session) ->
+    {error, payment_intent}.
+
+dashboard_url(Session, Path) ->
+    iolist_to_binary([
+        dashboard_url_prefix(Session),
+        Path
+    ]).
+
+dashboard_url_prefix(#{ <<"livemode">> := true }) ->
+    <<"https://dashboard.stripe.com/">>;
+dashboard_url_prefix(_Session) ->
+    <<"https://dashboard.stripe.com/test/">>.
 
 api_call(Method, Endpoint, Args, Context) ->
     case api_key(Context) of
