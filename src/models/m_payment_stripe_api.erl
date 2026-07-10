@@ -521,19 +521,15 @@ api_call(Method, Endpoint, Args, Context) ->
                     {z_convert:to_binary(K), z_convert:to_binary(V)}
                 end,
                 Args),
-            Body = cow_qs:qs(Args1),
-            Url = ?BASE_URL ++ z_convert:to_list(Endpoint),
-            Hs = [
-                {"Authorization", "Bearer " ++ z_convert:to_list(ApiKey)}
+            ApiKey1 = z_convert:to_binary(ApiKey),
+            Url = iolist_to_binary([?BASE_URL, Endpoint]),
+            Options = [
+                {authorization, <<"Bearer ", ApiKey1/binary>>},
+                {accept, <<"application/json">>},
+                {content_type, <<"application/x-www-form-urlencoded">>},
+                {timeout, ?TIMEOUT_REQUEST},
+                {connect_timeout, ?TIMEOUT_CONNECT}
             ],
-            Request = case Method of
-                get when Body =/= <<>> ->
-                    {Url ++ "?" ++ z_convert:to_list(Body), Hs};
-                get ->
-                    {Url ++ "?" ++ z_convert:to_list(Body), Hs};
-                post ->
-                    {Url, Hs, "application/x-www-form-urlencoded", Body}
-            end,
             ?LOG_DEBUG(#{
                 in => zotonic_mod_payment_stripe,
                 text => <<"Stripe API call">>,
@@ -541,38 +537,16 @@ api_call(Method, Endpoint, Args, Context) ->
                 endpoint => Endpoint,
                 url => Url
             }),
-            case httpc:request(
-                Method, Request,
-                [
-                    {autoredirect, true},
-                    {relaxed, false},
-                    {timeout, ?TIMEOUT_REQUEST},
-                    {connect_timeout, ?TIMEOUT_CONNECT}
-                ],
-                [
-                    {sync, true},
-                    {body_format, binary}
-                ])
-            of
-                {ok, {{_, X20x, _}, Headers, Payload}} when ((X20x >= 200) and (X20x < 400)) ->
-                    case proplists:get_value("content-type", Headers) of
-                        undefined ->
-                            {ok, Payload};
-                        ContentType ->
-                            case binary:match(list_to_binary(ContentType), <<"json">>) of
-                                nomatch ->
-                                    {ok, Payload};
-                                _ ->
-                                    Props = jsx:decode(Payload, [return_maps]),
-                                    {ok, Props}
-                            end
-                    end;
-                {ok, {{_, Code, _}, Headers, Payload}} ->
+            case z_fetch:fetch(Method, Url, Args1, Options, Context) of
+                {ok, {_FinalUrl, Headers, _Size, Payload}} ->
+                    decode_response(Headers, Payload);
+                {error, {Code, FinalUrl, Headers, _Size, Payload}} ->
                     ?LOG_ERROR(#{
                         in => zotonic_mod_payment_stripe,
                         text => <<"Stripe API error">>,
                         result => error,
                         reason => {code, Code},
+                        url => FinalUrl,
                         payload => Payload,
                         headers => Headers
                     }),
@@ -588,6 +562,33 @@ api_call(Method, Endpoint, Args, Context) ->
                 reason => api_key_not_set
             }),
             {error, api_key_not_set}
+    end.
+
+decode_response(Headers, Payload) ->
+    case proplists:get_value("content-type", Headers) of
+        undefined ->
+            {ok, Payload};
+        ContentType ->
+            case binary:match(z_convert:to_binary(ContentType), <<"json">>) of
+                nomatch ->
+                    {ok, Payload};
+                _ ->
+                    try
+                        Props = jsx:decode(Payload, [return_maps]),
+                        {ok, Props}
+                    catch
+                        error:badarg:Stack ->
+                            ?LOG_ERROR(#{
+                                in => zotonic_mod_payment_stripe,
+                                text => <<"Expected JSON payload data, but could not decode">>,
+                                result => error,
+                                reason => json,
+                                payload => Payload,
+                                stack => Stack
+                            }),
+                            {error, json}
+                    end
+            end
     end.
 
 %% @doc Return the secret API key to communicate with Stripe
