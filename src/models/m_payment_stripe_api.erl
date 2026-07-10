@@ -282,7 +282,7 @@ expire_payment_session(SessionId, Context) ->
 -spec sync_payment_session_status(Session, Context) -> {ok, {PaymentNr, Status}} | {error, term()}
     when Session :: binary() | undefined | map(),
          Context :: z:context(),
-         PaymentNr :: binary(),
+         PaymentNr :: binary() | undefined,
          Status :: new | pending | paid | cancelled.
 sync_payment_session_status(undefined, _Context) ->
     {error, session_id};
@@ -325,6 +325,21 @@ sync_payment_session_status_1({ok, Session}, Context) ->
             }
         } ->
             set_payment_status(PaymentNr, cancelled, DT, Session, Context);
+        #{
+            <<"id">> := SessionId,
+            <<"status">> := <<"expired">>,
+            <<"payment_status">> := <<"unpaid">>,
+            <<"mode">> := <<"payment">>
+        } ->
+            ?LOG_INFO(#{
+                in => zotonic_mod_payment_stripe,
+                text => <<"Ignoring expired Stripe payment session without payment_nr">>,
+                result => ok,
+                reason => no_payment_nr,
+                stripe_session_id => SessionId,
+                stripe_session_payment_link => maps:get(<<"payment_link">>, Session, undefined)
+            }),
+            {ok, {undefined, cancelled}};
         #{ <<"id">> := SessionId } ->
             ?LOG_ERROR(#{
                 in => zotonic_mod_payment_stripe,
