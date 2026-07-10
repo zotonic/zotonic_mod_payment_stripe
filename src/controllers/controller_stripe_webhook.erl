@@ -1,4 +1,20 @@
-%% Handle stripe callbacks
+%% @copyright 2021-2026 Marc Worrell
+%% @doc Handle stripe webhook callbacks
+%% @end
+
+%% Copyright 2021-2026 Marc Worrell
+%%
+%% Licensed under the Apache License, Version 2.0 (the "License");
+%% you may not use this file except in compliance with the License.
+%% You may obtain a copy of the License at
+%%
+%%     http://www.apache.org/licenses/LICENSE-2.0
+%%
+%% Unless required by applicable law or agreed to in writing, software
+%% distributed under the License is distributed on an "AS IS" BASIS,
+%% WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+%% See the License for the specific language governing permissions and
+%% limitations under the License.
 
 -module(controller_stripe_webhook).
 
@@ -10,10 +26,9 @@
     process/4
 ]).
 
--define(TIMESTAMP_TOLERANCE, 10).
+-define(TIMESTAMP_TOLERANCE, 300).
 
 -include_lib("kernel/include/logger.hrl").
--include_lib("zotonic_core/include/zotonic.hrl").
 
 allowed_methods(Context) ->
     {[ <<"POST">> ], Context}.
@@ -24,7 +39,12 @@ is_authorized(Context) ->
         true ->
             {true, z_context:set(body, Body, Context1)};
         false ->
-            ?LOG_ERROR("[mod_payment_stripe] Stripe webhook: rejected secret."),
+            ?LOG_ERROR(#{
+                in => zotonic_mod_payment_stripe,
+                text => <<"Stripe webhook: invalid signature">>,
+                result => error,
+                reason => invalid_signature
+            }),
             {<<"Stripe-Webhook-Secret">>, Context1}
     end.
 
@@ -40,7 +60,11 @@ process(<<"POST">>, _AcceptedCT, _ProvidedCT, Context) ->
     end.
 
 handle(<<"ping">>, _Ps, _Context) ->
-    ?LOG_DEBUG("Stripe: pong"),
+    ?LOG_DEBUG(#{
+        in => zotonic_mod_payment_stripe,
+        text => <<"Stripe webhook: received ping">>,
+        result => ok
+    }),
     ok;
 handle(<<"checkout.session.async_payment_failed">>, Payload, Context) ->
     sync_session(Payload, Context);
@@ -69,8 +93,13 @@ sync_session(#{
             Error
     end;
 sync_session(Payload, _Context) ->
-    ?LOG_ERROR("[mod_payment_stripe] Unknown payload when processing webhook data ~p",
-              [ Payload ]),
+    ?LOG_ERROR(#{
+        in => zotonic_mod_payment_stripe,
+        text => <<"[mod_payment_stripe] Unknown payload when processing webhook data">>,
+        result => error,
+        reason => payload,
+        payload => Payload
+    }),
     {error, payload}.
 
 is_valid_signature(Body, Context) ->

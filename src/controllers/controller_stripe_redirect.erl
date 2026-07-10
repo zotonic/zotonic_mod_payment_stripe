@@ -1,10 +1,11 @@
 %% @copyright 2021 Marc Worrell
-%% @doc Strips redirect the user with a GET to this controller
-%%      after a payment has been done at their HTML gateway.
-%%      This controller processes the payment status and then redirects
-%%      to either the payment_psp_done or payment_psp_cancel page.
+%% @doc Stripe redirects the user with a GET to this controller
+%% after a payment has been done at their HTML gateway.
+%% This controller processes the payment status and then redirects
+%% to either the payment_psp_done or payment_psp_cancel page.
+%% @end
 
-%% Copyright 2021 Marc Worrrell
+%% Copyright 2021 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -57,7 +58,14 @@ moved_temporarily(Context) ->
                     redirect(payment_psp_cancel, undefined, Context)
             end;
         Status ->
-            ?LOG_WARNING("[stripe] redirect with unknown status ~p", [ Status ]),
+            ?LOG_WARNING(#{
+                in => zotonic_mod_payment_stripe,
+                text => <<"Stripe redirect with unknown status">>,
+                result => error,
+                reason => unknown_status,
+                status => Status,
+                stripe_session_id => SessionId
+            }),
             redirect(payment_psp_cancel, undefined, Context)
     end.
 

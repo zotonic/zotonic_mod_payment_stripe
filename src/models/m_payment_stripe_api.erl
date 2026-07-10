@@ -1,7 +1,8 @@
-%% @copyright 2021 Marc Worrell
+%% @copyright 2021-2026 Marc Worrell
 %% @doc API interface and (push) state handling for Stripe PSP
+%% @end
 
-%% Copyright 2021 Marc Worrell
+%% Copyright 2021-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -59,7 +60,8 @@ test(Context) ->
         extra_props = [
             {email, <<"marc@worrell.nl">>},
             {name_surname, <<"Pietersen">>}
-        ]
+        ],
+        preferred_psp_module = mod_payment_stripe
     },
     case z_notifier:first(PaymentRequest, Context) of
         #payment_request_redirect{ redirect_uri = RedirectUri } ->
@@ -92,7 +94,7 @@ api_test(Context) ->
         {<<"line_items[0][price_data][currency]">>, <<"EUR">>},
         {<<"line_items[0][price_data][unit_amount]">>, <<"1234">>},
         {<<"line_items[0][price_data][product_data][name]">>, <<"Payment">>},
-        {<<"line_items[0][description]">>, <<"hello">>},
+        {<<"line_items[0][price_data][product_data][description]">>, <<"hello">>},
         {<<"line_items[0][quantity]">>, <<"1">>},
         {<<"metadata[payment_nr]">>, PaymentNr},
         {<<"metadata[user_id]">>, <<"1">>}
@@ -134,15 +136,14 @@ create(PaymentId, Context) ->
         {<<"locale">>, Language},
         {<<"cancel_url">>, <<CancelUrl/binary, "&session_id={CHECKOUT_SESSION_ID}">>},
         {<<"success_url">>, <<SuccessUrl/binary, "&session_id={CHECKOUT_SESSION_ID}">>},
-        {<<"customer_email">>, Email},
         {<<"line_items[0][price_data][currency]">>, Currency},
         {<<"line_items[0][price_data][unit_amount]">>, erlang:round(Amount*100)},
         {<<"line_items[0][price_data][product_data][name]">>, ?__("Payment", ContextLang)},
-        {<<"line_items[0][description]">>, valid_description( maps:get(<<"description">>, Payment) )},
+        {<<"line_items[0][price_data][product_data][description]">>, valid_description( maps:get(<<"description">>, Payment) )},
         {<<"line_items[0][quantity]">>, <<"1">>},
         {<<"metadata[payment_nr]">>, PaymentNr},
         {<<"metadata[user_id]">>, maps:get(<<"user_id">>, Payment)}
-    ] ++ metadata(Payment),
+    ] ++ customer_email(Email) ++ metadata(Payment),
     case api_call(post, "/v1/checkout/sessions", Args, Context) of
         {ok, #{
             <<"url">> := PaymentUrl,
@@ -175,8 +176,14 @@ create(PaymentId, Context) ->
                     {request_args, Args}
                 ],
                 Context),
-            ?LOG_ERROR("[stripe] API error creating payment for #~p: unknown json ~p",
-                        [PaymentId, JSON]),
+            ?LOG_ERROR(#{
+                in => zotonic_mod_payment_stripe,
+                text => <<"Stripe API returned unexpected payment create response">>,
+                result => error,
+                reason => json,
+                payment_id => PaymentId,
+                response => JSON
+            }),
             {error, json};
         {error, Error} ->
             m_payment_log:log(
@@ -189,7 +196,13 @@ create(PaymentId, Context) ->
                     {request_args, Args}
                 ],
                 Context),
-            ?LOG_ERROR("[stripe] API error creating payment for #~p: ~p", [PaymentId, Error]),
+            ?LOG_ERROR(#{
+                in => zotonic_mod_payment_stripe,
+                text => <<"Stripe API error creating payment">>,
+                result => error,
+                reason => Error,
+                payment_id => PaymentId
+            }),
             {error, Error}
     end.
 
@@ -207,6 +220,14 @@ metadata(K, Props) when is_map(Props) ->
     end;
 metadata(_, _Props) ->
     [].
+
+
+customer_email(undefined) ->
+    [];
+customer_email(<<>>) ->
+    [];
+customer_email(Email) ->
+    [{<<"customer_email">>, Email}].
 
 
 valid_description(undefined) -> <<>>;
@@ -238,8 +259,14 @@ expire_payment_session(SessionId, Context) ->
                 } = Session} ->
                     set_payment_status(PaymentNr, cancelled, DT, Session, Context);
                 {ok, JSON} ->
-                    ?LOG_ERROR("[stripe] payment status returns unknown session status for ~p: ~p ~p",
-                              [ SessionId, JSON ]),
+                    ?LOG_ERROR(#{
+                        in => zotonic_mod_payment_stripe,
+                        text => <<"Stripe expire session returned unexpected status">>,
+                        result => error,
+                        reason => session_data,
+                        stripe_session_id => SessionId,
+                        stripe_session => JSON
+                    }),
                     {error, session_data};
                 {error, _} = Error ->
                     Error
@@ -299,8 +326,14 @@ sync_payment_session_status_1({ok, Session}, Context) ->
         } ->
             set_payment_status(PaymentNr, cancelled, DT, Session, Context);
         #{ <<"id">> := SessionId } ->
-            ?LOG_ERROR("[stripe] payment status returns unknown session status for ~p: ~p",
-                        [ SessionId, Session ]),
+            ?LOG_ERROR(#{
+                in => zotonic_mod_payment_stripe,
+                text => <<"Stripe payment session has unexpected status">>,
+                result => error,
+                reason => session_data,
+                stripe_session_id => SessionId,
+                stripe_session => Session
+            }),
             {error, session_data}
     end;
 sync_payment_session_status_1({error, _} = Error, _Context) ->
@@ -309,7 +342,7 @@ sync_payment_session_status_1({error, _} = Error, _Context) ->
 
 set_payment_status(PaymentNr, Status, DT, Session, Context) ->
     case m_payment:get(PaymentNr, Context) of
-        {ok, #{ <<"id">> := PaymentId }} ->
+        {ok, #{ <<"id">> := PaymentId, <<"status">> := CurrentStatus }} ->
             m_payment_log:log(
                 PaymentId,
                 <<"stripe.session">>,
@@ -319,12 +352,20 @@ set_payment_status(PaymentNr, Status, DT, Session, Context) ->
                     <<"stripe_session">> => Session
                 },
                 Context),
+            _ = maybe_update_contact(PaymentId, Session, CurrentStatus, Status, Context),
             case mod_payment:set_payment_status(PaymentId, Status, DT, Context) of
                 ok -> {ok, {PaymentNr, Status}};
                 {error, _} = Error -> Error
             end;
         {error, _} = Error ->
-            ?LOG_ERROR("[stripe] status for unknown payment ~p", [ PaymentNr ]),
+            ?LOG_ERROR(#{
+                in => zotonic_mod_payment_stripe,
+                text => <<"Stripe status for unknown payment">>,
+                result => error,
+                reason => not_found,
+                payment_nr => PaymentNr,
+                stripe_session_id => maps:get(<<"id">>, Session, undefined)
+            }),
             Error
     end.
 
@@ -334,7 +375,74 @@ fetch_session(SessionId, Context) ->
     Url = "/v1/checkout/sessions/" ++ binary_to_list(SessionId),
     api_call(get, Url, [], Context).
 
-%% @doc Return the URL to the status page on the buckaroo dashboard
+maybe_update_contact(_PaymentId, _Session, _CurrentStatus, new, _Context) ->
+    ok;
+maybe_update_contact(PaymentId, Session, new, _Status, Context) ->
+    case m_payment:maybe_update_contact(PaymentId, payment_link_contact(Session), Context) of
+        ok ->
+            ok;
+        {error, need_contact} ->
+            maybe_fetch_payment_link_contact(PaymentId, Session, Context);
+        {error, _} = Error ->
+            Error
+    end;
+maybe_update_contact(_PaymentId, _Session, _CurrentStatus, _Status, _Context) ->
+    ok.
+
+maybe_fetch_payment_link_contact(PaymentId, #{ <<"id">> := SessionId }, Context) ->
+    case fetch_session(SessionId, Context) of
+        {ok, Session} ->
+            case m_payment:maybe_update_contact(PaymentId, payment_link_contact(Session), Context) of
+                ok -> ok;
+                {error, need_contact} -> ok;
+                {error, _} = Error -> Error
+            end;
+        {error, _} ->
+            ok
+    end;
+maybe_fetch_payment_link_contact(_PaymentId, _Session, _Context) ->
+    ok.
+
+payment_link_contact(Session) ->
+    Customer = maps:get(<<"customer_details">>, Session, #{}),
+    Address = maps:get(<<"address">>, Customer, #{}),
+    maps:merge(
+        address_props(Address),
+        maps:merge(
+            #{
+                <<"email">> => maps:get(<<"email">>, Customer, maps:get(<<"customer_email">>, Session, undefined)),
+                <<"phone">> => maps:get(<<"phone">>, Customer, undefined)
+            },
+            name_props(maps:get(<<"name">>, Customer, undefined)))).
+
+name_props(Name) when is_binary(Name) ->
+    case binary:split(z_string:trim(Name), <<" ">>, [global, trim_all]) of
+        [] ->
+            #{};
+        [<<>>] ->
+            #{};
+        [Surname] ->
+            #{ <<"name_surname">> => Surname };
+        [First | Rest] ->
+            #{ <<"name_first">> => First,
+               <<"name_surname">> => iolist_to_binary(lists:join(<<" ">>, Rest)) }
+    end;
+name_props(_) ->
+    #{}.
+
+address_props(Address) when is_map(Address) ->
+    #{
+        <<"address_street_1">> => maps:get(<<"line1">>, Address, undefined),
+        <<"address_street_2">> => maps:get(<<"line2">>, Address, undefined),
+        <<"address_postcode">> => maps:get(<<"postal_code">>, Address, undefined),
+        <<"address_city">> => maps:get(<<"city">>, Address, undefined),
+        <<"address_state">> => maps:get(<<"state">>, Address, undefined),
+        <<"address_country">> => maps:get(<<"country">>, Address, undefined)
+    };
+address_props(_) ->
+    #{}.
+
+%% @doc Return the URL to the status page on the Stripe dashboard.
 -spec payment_url( Session, Context ) -> {ok, Url} | {error, term()}
     when Session :: binary() | map(),
          Context :: z:context(),
@@ -342,16 +450,53 @@ fetch_session(SessionId, Context) ->
 payment_url(SessionId, Context) when is_binary(SessionId) ->
     case fetch_session(SessionId, Context) of
         {ok, Session} ->
-            payment_url(Session, Context);
+            payment_url_fetched(Session);
         {error, _} = Error ->
             Error
     end;
-payment_url(#{ <<"payment_intent">> := PaymentIntent }, _Context) ->
-    Url = iolist_to_binary([
-        "https://dashboard.stripe.com/test/payments/",
-        PaymentIntent
-        ]),
-    {ok, Url}.
+payment_url(Session, Context) when is_map(Session) ->
+    case payment_intent_url(Session) of
+        {error, payment_intent} ->
+            case maps:get(<<"id">>, Session, undefined) of
+                SessionId when is_binary(SessionId), SessionId =/= <<>> ->
+                    payment_url(SessionId, Context);
+                _ ->
+                    {error, payment_intent}
+            end;
+        Result ->
+            Result
+    end.
+
+payment_url_fetched(Session) ->
+    case payment_intent_url(Session) of
+        {ok, _Url} = Result ->
+            Result;
+        {error, payment_intent} ->
+            checkout_session_url(Session)
+    end.
+
+payment_intent_url(#{ <<"payment_intent">> := PaymentIntent } = Session)
+    when is_binary(PaymentIntent), PaymentIntent =/= <<>> ->
+    {ok, dashboard_url(Session, [<<"payments/">>, PaymentIntent])};
+payment_intent_url(_Session) ->
+    {error, payment_intent}.
+
+checkout_session_url(#{ <<"id">> := SessionId } = Session)
+    when is_binary(SessionId), SessionId =/= <<>> ->
+    {ok, dashboard_url(Session, [<<"checkout/sessions/">>, SessionId])};
+checkout_session_url(_Session) ->
+    {error, payment_intent}.
+
+dashboard_url(Session, Path) ->
+    iolist_to_binary([
+        dashboard_url_prefix(Session),
+        Path
+    ]).
+
+dashboard_url_prefix(#{ <<"livemode">> := true }) ->
+    <<"https://dashboard.stripe.com/">>;
+dashboard_url_prefix(_Session) ->
+    <<"https://dashboard.stripe.com/test/">>.
 
 api_call(Method, Endpoint, Args, Context) ->
     case api_key(Context) of
@@ -374,7 +519,13 @@ api_call(Method, Endpoint, Args, Context) ->
                 post ->
                     {Url, Hs, "application/x-www-form-urlencoded", Body}
             end,
-            ?LOG_DEBUG("Making API call to Stripe: ~p~n", [Request]),
+            ?LOG_DEBUG(#{
+                in => zotonic_mod_payment_stripe,
+                text => <<"Stripe API call">>,
+                method => Method,
+                endpoint => Endpoint,
+                url => Url
+            }),
             case httpc:request(
                 Method, Request,
                 [
@@ -402,13 +553,25 @@ api_call(Method, Endpoint, Args, Context) ->
                             end
                     end;
                 {ok, {{_, Code, _}, Headers, Payload}} ->
-                    ?LOG_ERROR("[stripe] for ~p returns ~p: ~p ~p", [ Endpoint, Code, Payload, Headers]),
+                    ?LOG_ERROR(#{
+                        in => zotonic_mod_payment_stripe,
+                        text => <<"Stripe API error">>,
+                        result => error,
+                        reason => {code, Code},
+                        payload => Payload,
+                        headers => Headers
+                    }),
                     {error, Code};
                 {error, _} = Error ->
                     Error
             end;
         {error, enoent} ->
-            ?LOG_ERROR("[stripe] config mod_payment_stripe.secret_key is not set"),
+            ?LOG_ERROR(#{
+                in => zotonic_mod_payment_stripe,
+                text => <<"Stripe API key not set">>,
+                result => error,
+                reason => api_key_not_set
+            }),
             {error, api_key_not_set}
     end.
 

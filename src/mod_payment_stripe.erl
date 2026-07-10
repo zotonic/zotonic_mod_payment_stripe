@@ -1,8 +1,21 @@
 %% @author Marc Worrell <marc@worrell.nl>
-%% @copyright 2021 Marc Worrell
-%% @doc Payment PSP module for Stripe
+%% @copyright 2021-2026 Marc Worrell
+%% @doc Payment PSP module for Stripe.
+%%
+%% Configuration:
+%%
+%% <ul>
+%%   <li><code>mod_payment_stripe.secret_key</code>:
+%%       Stripe secret API key, used for Stripe API requests.</li>
+%%   <li><code>mod_payment_stripe.webhook_secret</code>:
+%%       Stripe webhook signing secret, used to verify incoming webhook requests.</li>
+%% </ul>
+%%
+%% The Stripe webhook URL is <code>/stripe/webhook</code>. Configure it in Stripe
+%% to send the Checkout events (<code>checkout.session.*</code>).
+%% @end
 
-%% Copyright 2021 Marc Worrell
+%% Copyright 2021-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -22,6 +35,20 @@
 -mod_description("Payments using Payment Service Provider Stripe").
 -mod_author("Driebit").
 -mod_depends([ mod_payment ]).
+-mod_config([
+    #{
+        key => secret_key,
+        type => binary,
+        default => <<>>,
+        description => "Stripe secret key"
+    },
+    #{
+        key => webhook_secret,
+        type => binary,
+        default => <<>>,
+        description => "Stripe webhook signing secret"
+    }
+]).
 
 -author("Marc Worrell <marc@worrell.nl>").
 
@@ -47,13 +74,20 @@ init(Context) ->
             end
         end,
         [
-            {secret_key, <<>>}
+            {secret_key, <<>>},
+            {webhook_secret, <<>>}
         ]).
 
 %% @doc Payment request, make new payment with Stripe, return payment details and a
 %% redirect uri for the user to handle the payment.
-observe_payment_psp_request(#payment_psp_request{ payment_id = PaymentId }, Context) ->
-    m_payment_stripe_api:create(PaymentId, Context).
+observe_payment_psp_request(#payment_psp_request{
+        payment_id = PaymentId,
+        preferred_psp_module = PreferredPspModule
+    }, Context) when PreferredPspModule =:= undefined;
+                     PreferredPspModule =:= ?MODULE ->
+    m_payment_stripe_api:create(PaymentId, Context);
+observe_payment_psp_request(#payment_psp_request{}, _Context) ->
+    undefined.
 
 %% @doc Return the URL where the given payment can be viewed on the Stripe website.
 observe_payment_psp_view_url(#payment_psp_view_url{ psp_module = ?MODULE, psp_data = Data }, Context) ->
@@ -71,7 +105,14 @@ observe_payment_psp_status_sync(#payment_psp_status_sync{
         {ok, _} ->
             ok;
         {error, 404} = Error ->
-            ?LOG_WARNING("[stripe] unknown payment id ~p (~p)", [ PaymentId, StripeSessionId ]),
+            ?LOG_WARNING(#{
+                in => zotonic_mod_payment_stripe,
+                text => <<"Stripe payment session not found">>,
+                result => error,
+                reason => not_found,
+                payment_id => PaymentId,
+                stripe_session_id => StripeSessionId
+            }),
             Error;
         {error, _} = Error ->
             Error
