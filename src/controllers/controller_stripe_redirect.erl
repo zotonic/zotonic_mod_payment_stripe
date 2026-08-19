@@ -1,11 +1,11 @@
-%% @copyright 2021 Marc Worrell
+%% @copyright 2021-2026 Marc Worrell
 %% @doc Stripe redirects the user with a GET to this controller
 %% after a payment has been done at their HTML gateway.
 %% This controller processes the payment status and then redirects
-%% to either the payment_psp_done or payment_psp_cancel page.
+%% to the payment_psp_done page.
 %% @end
 
-%% Copyright 2021 Marc Worrell
+%% Copyright 2021-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -70,8 +70,12 @@ moved_temporarily(Context) ->
     end.
 
 redirect(PaymentNr, Context) ->
+    PaymentNr1 = case PaymentNr of
+        undefined -> z_context:get_q(<<"payment_nr">>, Context);
+        _ -> PaymentNr
+    end,
     Args = [
-        {payment_nr, PaymentNr}
+        {payment_nr, PaymentNr1}
     ],
     Location = z_context:abs_url(z_dispatcher:url_for(payment_psp_done, Args, Context), Context),
     {{true, Location}, Context}.
