@@ -1,11 +1,11 @@
-%% @copyright 2021 Marc Worrell
+%% @copyright 2021-2026 Marc Worrell
 %% @doc Stripe redirects the user with a GET to this controller
 %% after a payment has been done at their HTML gateway.
 %% This controller processes the payment status and then redirects
-%% to either the payment_psp_done or payment_psp_cancel page.
+%% to the payment_psp_done page.
 %% @end
 
-%% Copyright 2021 Marc Worrell
+%% Copyright 2021-2026 Marc Worrell
 %%
 %% Licensed under the Apache License, Version 2.0 (the "License");
 %% you may not use this file except in compliance with the License.
@@ -45,17 +45,17 @@ moved_temporarily(Context) ->
     case z_context:get_q(<<"status">>, Context) of
         <<"ok">> ->
             case m_payment_stripe_api:sync_payment_session_status(SessionId, Context) of
-                {ok, {PaymentNr, S}} ->
-                    redirect(disp(S), PaymentNr, Context);
+                {ok, {PaymentNr, _S}} ->
+                    redirect(PaymentNr, Context);
                 {error, _} ->
-                    redirect(payment_psp_cancel, undefined, Context)
+                    redirect(undefined, Context)
             end;
         <<"cancel">> ->
             case m_payment_stripe_api:expire_payment_session(SessionId, Context) of
-                {ok, {PaymentNr, S}} ->
-                    redirect(disp(S), PaymentNr, Context);
+                {ok, {PaymentNr, _S}} ->
+                    redirect(PaymentNr, Context);
                 {error, _} ->
-                    redirect(payment_psp_cancel, undefined, Context)
+                    redirect(undefined, Context)
             end;
         Status ->
             ?LOG_WARNING(#{
@@ -66,18 +66,18 @@ moved_temporarily(Context) ->
                 status => Status,
                 stripe_session_id => SessionId
             }),
-            redirect(payment_psp_cancel, undefined, Context)
+            redirect(undefined, Context)
     end.
 
-disp(cancelled) -> payment_psp_cancel;
-disp(expired) -> payment_psp_cancel;
-disp(failed) -> payment_psp_cancel;
-disp(paid) -> payment_psp_done;
-disp(pending) -> payment_psp_done.
-
-redirect(Dispatch, PaymentNr, Context) ->
+redirect(PaymentNr, Context) ->
+    PaymentNr1 = case PaymentNr of
+        undefined -> z_context:get_q(<<"payment_nr">>, Context);
+        _ -> PaymentNr
+    end,
     Args = [
-        {payment_nr, PaymentNr}
+        {payment_nr, PaymentNr1}
     ],
-    Location = z_context:abs_url(z_dispatcher:url_for(Dispatch, Args, Context), Context),
+    Location = z_context:abs_url(
+        z_dispatcher:url_for(payment_psp_done, Args, none, Context),
+        Context),
     {{true, Location}, Context}.
