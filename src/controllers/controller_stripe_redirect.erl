@@ -45,17 +45,17 @@ moved_temporarily(Context) ->
     case z_context:get_q(<<"status">>, Context) of
         <<"ok">> ->
             case m_payment_stripe_api:sync_payment_session_status(SessionId, Context) of
-                {ok, {PaymentNr, S}} ->
-                    redirect(disp(S), PaymentNr, Context);
+                {ok, {PaymentNr, _S}} ->
+                    redirect(PaymentNr, Context);
                 {error, _} ->
-                    redirect(payment_psp_cancel, undefined, Context)
+                    redirect(undefined, Context)
             end;
         <<"cancel">> ->
             case m_payment_stripe_api:expire_payment_session(SessionId, Context) of
-                {ok, {PaymentNr, S}} ->
-                    redirect(disp(S), PaymentNr, Context);
+                {ok, {PaymentNr, _S}} ->
+                    redirect(PaymentNr, Context);
                 {error, _} ->
-                    redirect(payment_psp_cancel, undefined, Context)
+                    redirect(undefined, Context)
             end;
         Status ->
             ?LOG_WARNING(#{
@@ -66,18 +66,12 @@ moved_temporarily(Context) ->
                 status => Status,
                 stripe_session_id => SessionId
             }),
-            redirect(payment_psp_cancel, undefined, Context)
+            redirect(undefined, Context)
     end.
 
-disp(cancelled) -> payment_psp_cancel;
-disp(expired) -> payment_psp_cancel;
-disp(failed) -> payment_psp_cancel;
-disp(paid) -> payment_psp_done;
-disp(pending) -> payment_psp_done.
-
-redirect(Dispatch, PaymentNr, Context) ->
+redirect(PaymentNr, Context) ->
     Args = [
         {payment_nr, PaymentNr}
     ],
-    Location = z_context:abs_url(z_dispatcher:url_for(Dispatch, Args, Context), Context),
+    Location = z_context:abs_url(z_dispatcher:url_for(payment_psp_done, Args, Context), Context),
     {{true, Location}, Context}.
