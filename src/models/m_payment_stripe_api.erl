@@ -392,7 +392,7 @@ fetch_session(SessionId, Context) ->
 
 maybe_update_contact(_PaymentId, _Session, _CurrentStatus, new, _Context) ->
     ok;
-maybe_update_contact(PaymentId, Session, new, _Status, Context) ->
+maybe_update_contact(PaymentId, Session, new, _Status, Context) when is_map(Session) ->
     case m_payment:maybe_update_contact(PaymentId, payment_link_contact(Session), Context) of
         ok ->
             ok;
