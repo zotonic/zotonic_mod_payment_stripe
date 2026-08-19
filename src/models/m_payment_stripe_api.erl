@@ -216,6 +216,7 @@ metadata(#{ <<"props">> := Props }) ->
 metadata(K, Props) when is_map(Props) ->
     case maps:get(K, Props, undefined) of
         undefined -> [];
+        null -> [];
         V -> {<<"metadata[", K/binary, "]">>, V}
     end;
 metadata(_, _Props) ->
@@ -223,6 +224,8 @@ metadata(_, _Props) ->
 
 
 customer_email(undefined) ->
+    [];
+customer_email(null) ->
     [];
 customer_email(<<>>) ->
     [];
@@ -392,7 +395,7 @@ fetch_session(SessionId, Context) ->
 
 maybe_update_contact(_PaymentId, _Session, _CurrentStatus, new, _Context) ->
     ok;
-maybe_update_contact(PaymentId, Session, new, _Status, Context) ->
+maybe_update_contact(PaymentId, Session, new, _Status, Context) when is_map(Session) ->
     case m_payment:maybe_update_contact(PaymentId, payment_link_contact(Session), Context) of
         ok ->
             ok;
@@ -419,16 +422,16 @@ maybe_fetch_payment_link_contact(_PaymentId, _Session, _Context) ->
     ok.
 
 payment_link_contact(Session) ->
-    Customer = maps:get(<<"customer_details">>, Session, #{}),
-    Address = maps:get(<<"address">>, Customer, #{}),
+    Customer = maps_get(<<"customer_details">>, Session, #{}),
+    Address = maps_get(<<"address">>, Customer, #{}),
     maps:merge(
         address_props(Address),
         maps:merge(
             #{
-                <<"email">> => maps:get(<<"email">>, Customer, maps:get(<<"customer_email">>, Session, undefined)),
-                <<"phone">> => maps:get(<<"phone">>, Customer, undefined)
+                <<"email">> => maps_get(<<"email">>, Customer, maps_get(<<"customer_email">>, Session, undefined)),
+                <<"phone">> => maps_get(<<"phone">>, Customer, undefined)
             },
-            name_props(maps:get(<<"name">>, Customer, undefined)))).
+            name_props(maps_get(<<"name">>, Customer, undefined)))).
 
 name_props(Name) when is_binary(Name) ->
     case binary:split(z_string:trim(Name), <<" ">>, [global, trim_all]) of
@@ -447,15 +450,24 @@ name_props(_) ->
 
 address_props(Address) when is_map(Address) ->
     #{
-        <<"address_street_1">> => maps:get(<<"line1">>, Address, undefined),
-        <<"address_street_2">> => maps:get(<<"line2">>, Address, undefined),
-        <<"address_postcode">> => maps:get(<<"postal_code">>, Address, undefined),
-        <<"address_city">> => maps:get(<<"city">>, Address, undefined),
-        <<"address_state">> => maps:get(<<"state">>, Address, undefined),
-        <<"address_country">> => maps:get(<<"country">>, Address, undefined)
+        <<"address_street_1">> => maps_get(<<"line1">>, Address, undefined),
+        <<"address_street_2">> => maps_get(<<"line2">>, Address, undefined),
+        <<"address_postcode">> => maps_get(<<"postal_code">>, Address, undefined),
+        <<"address_city">> => maps_get(<<"city">>, Address, undefined),
+        <<"address_state">> => maps_get(<<"state">>, Address, undefined),
+        <<"address_country">> => maps_get(<<"country">>, Address, undefined)
     };
 address_props(_) ->
     #{}.
+
+maps_get(Key, Map, Default) when is_map(Map) ->
+    case maps:get(Key, Map, Default) of
+        null -> Default;
+        V -> V
+    end;
+maps_get(_K, null, Default) ->
+    Default.
+
 
 %% @doc Return the URL to the status page on the Stripe dashboard.
 -spec payment_url( Session, Context ) -> {ok, Url} | {error, term()}
