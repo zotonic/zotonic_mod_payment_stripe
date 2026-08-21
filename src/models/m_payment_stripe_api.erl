@@ -20,6 +20,7 @@
 
 -export([
     create/2,
+    amount_minor_units/2,
 
     payment_url/2,
 
@@ -93,7 +94,7 @@ api_test(Context) ->
         {<<"cancel_url">>, <<CancelUrl/binary, "&session_id={CHECKOUT_SESSION_ID}">>},
         {<<"success_url">>, <<SuccessUrl/binary, "&session_id={CHECKOUT_SESSION_ID}">>},
         {<<"customer_email">>, <<"marc@worrell.nl">>},
-        {<<"line_items[0][price_data][currency]">>, <<"EUR">>},
+        {<<"line_items[0][price_data][currency]">>, <<"eur">>},
         {<<"line_items[0][price_data][unit_amount]">>, <<"1234">>},
         {<<"line_items[0][price_data][product_data][name]">>, <<"Payment">>},
         {<<"line_items[0][price_data][product_data][description]">>, <<"hello">>},
@@ -113,6 +114,7 @@ create(PaymentId, Context) ->
     false = maps:get(<<"is_recurring_start">>, Payment),
 
     Currency = maps:get(<<"currency">>, Payment),
+    StripeCurrency = z_string:to_lower(Currency),
     Amount = maps:get(<<"amount">>, Payment),
     PaymentNr = maps:get(<<"payment_nr">>, Payment),
     SuccessUrl = z_context:abs_url(
@@ -140,8 +142,8 @@ create(PaymentId, Context) ->
         {<<"locale">>, Language},
         {<<"cancel_url">>, <<CancelUrl/binary, "&session_id={CHECKOUT_SESSION_ID}">>},
         {<<"success_url">>, <<SuccessUrl/binary, "&session_id={CHECKOUT_SESSION_ID}">>},
-        {<<"line_items[0][price_data][currency]">>, Currency},
-        {<<"line_items[0][price_data][unit_amount]">>, erlang:round(Amount*100)},
+        {<<"line_items[0][price_data][currency]">>, StripeCurrency},
+        {<<"line_items[0][price_data][unit_amount]">>, amount_minor_units(Amount, Currency)},
         {<<"line_items[0][price_data][product_data][name]">>, ?__("Payment", ContextLang)},
         {<<"line_items[0][price_data][product_data][description]">>, valid_description( maps:get(<<"description">>, Payment) )},
         {<<"line_items[0][quantity]">>, <<"1">>},
@@ -210,6 +212,15 @@ create(PaymentId, Context) ->
             {error, Error}
     end.
 
+%% Stripe supports more currencies than mod_payment currently allows. Of the
+%% allowed currencies, JPY is the only zero-decimal presentment currency.
+%% HUF and TWD use two decimal places for charges and have special rules only
+%% for payouts.
+-spec amount_minor_units(number(), binary()) -> integer().
+amount_minor_units(Amount, <<"JPY">>) ->
+    round(Amount);
+amount_minor_units(Amount, _Currency) ->
+    round(Amount * 100).
 
 metadata(#{ <<"props">> := Props }) ->
     lists:flatten([
