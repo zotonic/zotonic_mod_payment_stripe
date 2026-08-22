@@ -283,7 +283,7 @@ expire_payment_session(SessionId, Context) ->
                         result => error,
                         reason => session_data,
                         stripe_session_id => SessionId,
-                        stripe_session => JSON
+                        stripe_session => strip_session_data(JSON)
                     }),
                     {error, session_data};
                 {error, _} = Error ->
@@ -391,8 +391,8 @@ sync_payment_session_status_1({error, _} = Error, _Context) ->
 %% and the local payment. Do not include customer details or free-form metadata
 %% such as the payment note in application logs.
 -spec strip_session_data(Session) -> map()
-    when Session :: map().
-strip_session_data(Session) ->
+    when Session :: map() | term().
+strip_session_data(Session) when is_map(Session) ->
     maps:with([
         <<"id">>,
         <<"object">>,
@@ -412,8 +412,9 @@ strip_session_data(Session) ->
         <<"client_reference_id">>,
         <<"recovered_from">>,
         <<"metadata">>
-    ], Session).
-
+    ], Session);
+strip_session_data(_Session) ->
+    #{}.
 
 set_payment_status(PaymentNr, Status, DT, Session, Context) ->
     case m_payment:get(PaymentNr, Context) of
