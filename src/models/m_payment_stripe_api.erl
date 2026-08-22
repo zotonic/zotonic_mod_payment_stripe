@@ -481,6 +481,8 @@ maps_get(Key, Map, Default) when is_map(Map) ->
         V -> V
     end;
 maps_get(_K, null, Default) ->
+    Default;
+maps_get(_K, undefined, Default) ->
     Default.
 
 
