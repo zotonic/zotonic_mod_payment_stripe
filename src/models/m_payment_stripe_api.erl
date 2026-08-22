@@ -283,7 +283,7 @@ expire_payment_session(SessionId, Context) ->
                         result => error,
                         reason => session_data,
                         stripe_session_id => SessionId,
-                        stripe_session => JSON
+                        stripe_session => strip_session_data(JSON)
                     }),
                     {error, session_data};
                 {error, _} = Error ->
@@ -359,19 +359,62 @@ sync_payment_session_status_1({ok, Session}, Context) ->
             }),
             {ok, {undefined, cancelled}};
         #{ <<"id">> := SessionId } ->
-            ?LOG_ERROR(#{
-                in => zotonic_mod_payment_stripe,
-                text => <<"Stripe payment session has unexpected status">>,
-                result => error,
-                reason => session_data,
-                stripe_session_id => SessionId,
-                stripe_session => Session
-            }),
-            {error, session_data}
+            case maps:get(<<"metadata">>, Session, #{}) of
+                #{ <<"payment_nr">> := PaymentNr } ->
+                    ?LOG_ERROR(#{
+                        in => zotonic_mod_payment_stripe,
+                        text => <<"Stripe payment session has unexpected status">>,
+                        result => error,
+                        reason => session_data,
+                        payment_nr => PaymentNr,
+                        stripe_session_id => SessionId,
+                        stripe_session => strip_session_data(Session)
+                    }),
+                    {error, session_data};
+                _ ->
+                    ?LOG_ERROR(#{
+                        in => zotonic_mod_payment_stripe,
+                        text => <<"Stripe payment session has no payment_nr">>,
+                        result => error,
+                        reason => session_data,
+                        payment_nr => undefined,
+                        stripe_session_id => SessionId,
+                        stripe_session => strip_session_data(Session)
+                    }),
+                    {error, session_data}
+            end
     end;
 sync_payment_session_status_1({error, _} = Error, _Context) ->
     Error.
 
+%% @doc Return the fields needed to reconcile a Checkout Session with Stripe
+%% and the local payment. Do not include customer details or free-form metadata
+%% such as the payment note in application logs.
+-spec strip_session_data(Session) -> map()
+    when Session :: map() | term().
+strip_session_data(Session) when is_map(Session) ->
+    maps:with([
+        <<"id">>,
+        <<"object">>,
+        <<"livemode">>,
+        <<"created">>,
+        <<"mode">>,
+        <<"status">>,
+        <<"payment_status">>,
+        <<"amount_total">>,
+        <<"currency">>,
+        <<"payment_intent">>,
+        <<"payment_link">>,
+        <<"customer">>,
+        <<"invoice">>,
+        <<"subscription">>,
+        <<"setup_intent">>,
+        <<"client_reference_id">>,
+        <<"recovered_from">>,
+        <<"metadata">>
+    ], Session);
+strip_session_data(_Session) ->
+    #{}.
 
 set_payment_status(PaymentNr, Status, DT, Session, Context) ->
     case m_payment:get(PaymentNr, Context) of
