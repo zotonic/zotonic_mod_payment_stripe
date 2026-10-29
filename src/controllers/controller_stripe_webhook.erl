@@ -85,13 +85,9 @@ sync_session(#{
                 <<"id">> := _SessionId
             } = Session
         }
-    }, Context) ->
-    case m_payment_stripe_api:sync_payment_session_status(Session, Context) of
-        {ok, {_PaymentNr, _Status}} ->
-            ok;
-        {error, _} = Error ->
-            Error
-    end;
+    } = Event, Context) ->
+    m_payment_stripe_api:receive_session(Session, Event, Context);
+
 sync_session(Payload, _Context) ->
     ?LOG_ERROR(#{
         in => zotonic_mod_payment_stripe,

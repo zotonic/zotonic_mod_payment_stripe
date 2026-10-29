@@ -38,15 +38,17 @@
 -mod_config([
     #{
         key => secret_key,
+        is_secret => true,
         type => binary,
         default => <<>>,
-        description => "Stripe secret key"
+        description => "Stripe secret key."
     },
     #{
         key => webhook_secret,
+        is_secret => true,
         type => binary,
         default => <<>>,
-        description => "Stripe webhook signing secret"
+        description => "Stripe webhook signing secret."
     }
 ]).
 
@@ -57,7 +59,8 @@
 
     observe_payment_psp_request/2,
     observe_payment_psp_view_url/2,
-    observe_payment_psp_status_sync/2
+    observe_payment_psp_status_sync/2,
+    observe_payment_psp_poll/2
 ]).
 
 -include_lib("kernel/include/logger.hrl").
@@ -118,4 +121,12 @@ observe_payment_psp_status_sync(#payment_psp_status_sync{
             Error
     end;
 observe_payment_psp_status_sync(#payment_psp_status_sync{}, _Context) ->
+    undefined.
+
+%% Discovery pages are imported and checkpointed by mod_payment.
+observe_payment_psp_poll(#payment_psp_poll{psp_module = undefined}, _Context) ->
+    ?MODULE;
+observe_payment_psp_poll(#payment_psp_poll{psp_module = ?MODULE} = Request, Context) ->
+    payment_stripe_poll:page(Request, Context);
+observe_payment_psp_poll(#payment_psp_poll{}, _Context) ->
     undefined.
