@@ -1,0 +1,1 @@
+{% include "_admin_payment_config_section.tpl" module=`mod_payment_stripe` title=_"Stripe" explanation=_"Discovery covers payment-mode Checkout Sessions. Direct Charges, PaymentIntents and subscriptions are not discovered." %}

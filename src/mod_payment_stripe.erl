@@ -30,6 +30,35 @@
 %% limitations under the License.
 
 -module(mod_payment_stripe).
+-moduledoc(#{
+    zotonic_keywords => [
+        "reference", "backend_developer", "site_administrator", "module",
+        "payments", "configuration", "api_and_integration"
+    ]
+}).
+-moduledoc("
+Provide Stripe Checkout payments through `mod_payment`.
+
+Enable this module together with `mod_payment`. Configure `secret_key` and
+`webhook_secret` under **System → Payment configuration**, requiring
+`use.mod_admin_config`. Use credentials and a signing secret for the intended
+Stripe environment. Set
+`#payment_request{preferred_psp_module = mod_payment_stripe}` to select Stripe.
+This adapter creates payment-mode Checkout Sessions and does not create recurring
+subscriptions.
+
+Configure Stripe to deliver Checkout Session events to `/stripe/webhook`.
+Incoming requests are verified with `webhook_secret` before their session data is
+passed to the shared payment receive logic. The browser returns through
+`/stripe/ready/:payment_nr`; status is synchronized with the Stripe API.
+
+When `mod_payment.accept_unknown_payments` is enabled, verified webhooks may import
+unknown payments. Four-hour discovery additionally requires that
+`mod_payment.disable_unknown_payment_polling` is false. Discovery covers
+payment-mode Checkout Sessions within the shared retention window; direct Charges,
+PaymentIntents and subscriptions are not discovered.
+").
+
 
 -mod_title("Payments using Stripe").
 -mod_description("Payments using Payment Service Provider Stripe").
@@ -38,15 +67,17 @@
 -mod_config([
     #{
         key => secret_key,
+        is_secret => true,
         type => binary,
         default => <<>>,
-        description => "Stripe secret key"
+        description => "Stripe secret key."
     },
     #{
         key => webhook_secret,
+        is_secret => true,
         type => binary,
         default => <<>>,
-        description => "Stripe webhook signing secret"
+        description => "Stripe webhook signing secret."
     }
 ]).
 
@@ -57,7 +88,8 @@
 
     observe_payment_psp_request/2,
     observe_payment_psp_view_url/2,
-    observe_payment_psp_status_sync/2
+    observe_payment_psp_status_sync/2,
+    observe_payment_psp_poll/2
 ]).
 
 -include_lib("kernel/include/logger.hrl").
@@ -118,4 +150,12 @@ observe_payment_psp_status_sync(#payment_psp_status_sync{
             Error
     end;
 observe_payment_psp_status_sync(#payment_psp_status_sync{}, _Context) ->
+    undefined.
+
+%% Discovery pages are imported and checkpointed by mod_payment.
+observe_payment_psp_poll(#payment_psp_poll{psp_module = undefined}, _Context) ->
+    ?MODULE;
+observe_payment_psp_poll(#payment_psp_poll{psp_module = ?MODULE} = Request, Context) ->
+    payment_stripe_poll:page(Request, Context);
+observe_payment_psp_poll(#payment_psp_poll{}, _Context) ->
     undefined.

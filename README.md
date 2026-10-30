@@ -24,3 +24,24 @@ Subscriptions
 -------------
 
 Periodic payments are not yet supported.
+
+
+Receiving external payments
+---------------------------
+
+With `mod_payment.accept_unknown_payments = true`, verified Checkout Session
+webhooks can import payments without Zotonic metadata. Imports use the shared
+`mod_payment:receive_payment/3` API. This covers the existing Checkout Session
+events, not PaymentIntent, subscription, or charge event families. Redirects
+cannot import payments, and no polling is added.
+
+Four-hour discovery is enabled by `mod_payment.accept_unknown_payments`, unless
+`mod_payment.disable_unknown_payment_polling` is set. It lists payment-mode
+Checkout Sessions only; direct Charges/PaymentIntents and subscriptions are not
+discovered by this module. Scheduling and import policy belong to `mod_payment`.
+
+Discovery also scans [Events](https://docs.stripe.com/api/events/list) by event date
+for Checkout Session updates and full charge refunds. Refunds resolve to their
+Checkout Session identity. Recent events can import or update older payments;
+Stripe retains events for 30 days. Partial refunds are not represented by this
+module.

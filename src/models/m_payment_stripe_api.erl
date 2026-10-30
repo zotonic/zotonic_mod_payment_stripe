@@ -17,6 +17,34 @@
 %% limitations under the License.
 
 -module(m_payment_stripe_api).
+-moduledoc(#{
+    zotonic_keywords => [
+        "reference", "backend_developer", "integrator", "model",
+        "payments", "api_and_integration"
+    ]
+}).
+-moduledoc("
+Create and synchronize Stripe payment-mode Checkout Sessions.
+
+This module exposes Erlang functions rather than template model paths.
+`create(PaymentId, Context)` creates a session for an existing local payment and
+returns `{ok, #payment_psp_handler{}}` or an error. Use the shared payment-request
+notification for ordinary checkout; recurring session creation is unsupported.
+
+For example, `m_payment_stripe_api:fetch_session(SessionId, Context)` returns
+`{ok, SessionMap}` or `{error, Reason}`. `sync_payment_session_status/2` retrieves
+and applies session status. `expire_payment_session/2` handles cancellation via
+the provider. `receive_session/3` feeds verified session data into shared payment
+receiving. API calls use `mod_payment_stripe.secret_key`.
+
+These functions are trusted server APIs without model-path ACL checks. Webhook
+signature verification belongs to `controller_stripe_webhook`, before event data
+reaches this module.
+").
+
+
+%% Exported for the documented HTTP contract tests in test/.
+-export([api_call/4]).
 
 -export([
     create/2,
@@ -26,6 +54,8 @@
 
     expire_payment_session/2,
     sync_payment_session_status/2,
+    receive_session/3,
+    webhook_payment/2,
 
     fetch_session/2,
 
@@ -309,7 +339,14 @@ sync_payment_session_status(SessionId, Context) when is_binary(SessionId) ->
 sync_payment_session_status(#{ <<"object">> := <<"checkout.session">> } = Session, Context) ->
     sync_payment_session_status_1({ok, Session}, Context).
 
-sync_payment_session_status_1({ok, Session}, Context) ->
+sync_payment_session_status_1({ok, Session0}, Context) ->
+    % Imported sessions have no Zotonic metadata. Only resolve an already known
+    % PSP identity here; redirects and status checks must never import payments.
+    Session = case m_payment:get_by_psp(mod_payment_stripe, maps:get(<<"id">>, Session0), Context) of
+        {ok, #{ <<"payment_nr">> := Nr }} ->
+            Session0#{ <<"metadata">> => #{ <<"payment_nr">> => Nr } };
+        _ -> Session0
+    end,
     DT = calendar:universal_time(),
     case Session of
         #{
@@ -386,6 +423,73 @@ sync_payment_session_status_1({ok, Session}, Context) ->
     end;
 sync_payment_session_status_1({error, _} = Error, _Context) ->
     Error.
+
+%% @doc Receive a Checkout Session only after webhook signature verification.
+-spec receive_session(Session, Event, Context) -> Result
+    when Session :: map(), Event :: map(), Context :: z:context(),
+         Result :: ok | {error, term()}.
+receive_session(Session, Event, Context) ->
+    case webhook_payment(Session, Event) of
+        {ok, Data} ->
+            % Existing payment links can need an expanded session for contact
+            % details. Keep this provider-specific fetch outside the transaction.
+            case m_payment:get_by_psp(mod_payment_stripe, maps:get(psp_external_id, Data), Context) of
+                {ok, #{ <<"id">> := Id, <<"status">> := Current } = Payment} ->
+                    case payment_receive:validate(Data) =:= ok
+                         andalso payment_receive:matches(mod_payment_stripe, Data, Payment) of
+                        true -> _ = maybe_update_contact(Id, Session, Current, maps:get(status, Data), Context);
+                        false -> ok
+                    end;
+                _ -> ok
+            end,
+            case mod_payment:receive_payment(mod_payment_stripe, Data, Context) of
+                {ok, _} -> ok;
+                {error, _} = Error -> Error
+            end;
+        {error, _} = Error -> Error
+    end.
+
+-spec webhook_payment(Session, Event) -> Result
+    when Session :: map(), Event :: map(), Result :: {ok, map()} | {error, term()}.
+webhook_payment(#{ <<"id">> := Id, <<"mode">> := <<"payment">>,
+                   <<"amount_total">> := Amount, <<"currency">> := Currency } = Session,
+                #{ <<"created">> := Created } = Event)
+    when is_integer(Amount), Amount >= 0, is_binary(Currency), is_integer(Created) ->
+    case session_status(Session, maps:get(<<"type">>, Event, undefined)) of
+        {ok, Status} ->
+            CurrencyUpper = z_string:to_upper(Currency),
+            Scale = webhook_currency_scale(CurrencyUpper),
+            {ok, #{
+                psp_external_id => Id,
+                payment_nr => maps_get(<<"payment_nr">>, maps_get(<<"metadata">>, Session, #{}), undefined),
+                amount => Amount / Scale,
+                currency => CurrencyUpper,
+                status => Status,
+                status_date => calendar:system_time_to_universal_time(Created, second),
+                event_id => maps:get(<<"id">>, Event, undefined),
+                description => maps_get(<<"description">>, Session, <<>>),
+                contact => payment_link_contact(Session),
+                psp_data => Session
+            }};
+        {error, _} = Error -> Error
+    end;
+webhook_payment(_, _) -> {error, session_data}.
+
+%% Stripe presentment units (ISK and UGX retain two-decimal API amounts).
+webhook_currency_scale(Currency) ->
+    case lists:member(Currency, [<<"BIF">>, <<"CLP">>, <<"DJF">>, <<"GNF">>,
+            <<"JPY">>, <<"KMF">>, <<"KRW">>, <<"MGA">>, <<"PYG">>, <<"RWF">>,
+            <<"VND">>, <<"VUV">>, <<"XAF">>, <<"XOF">>, <<"XPF">>]) of
+        true -> 1;
+        false -> 100
+    end.
+
+session_status(_, <<"checkout.session.async_payment_failed">>) -> {ok, failed};
+session_status(#{ <<"status">> := <<"open">> }, _) -> {ok, new};
+session_status(#{ <<"status">> := <<"expired">> }, _) -> {ok, cancelled};
+session_status(#{ <<"status">> := <<"complete">>, <<"payment_status">> := <<"paid">> }, _) -> {ok, paid};
+session_status(#{ <<"status">> := <<"complete">>, <<"payment_status">> := <<"unpaid">> }, _) -> {ok, pending};
+session_status(_, _) -> {error, session_data}.
 
 %% @doc Return the fields needed to reconcile a Checkout Session with Stripe
 %% and the local payment. Do not include customer details or free-form metadata

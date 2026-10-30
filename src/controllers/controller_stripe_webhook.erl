@@ -17,6 +17,31 @@
 %% limitations under the License.
 
 -module(controller_stripe_webhook).
+-moduledoc(#{
+    zotonic_keywords => [
+        "reference", "backend_developer", "integrator", "controller",
+        "payments", "api_and_integration", "security", "send_and_receive"
+    ]
+}).
+-moduledoc("
+Handle Stripe checkout callbacks.
+
+Accept POST events at `/stripe/webhook`. Verify the Stripe signature against
+the raw body using `mod_payment_stripe.webhook_secret`, then process supported
+Checkout Session events through the shared payment receive logic. Unknown-payment
+imports depend on mod_payment configuration. Invalid signatures are rejected;
+processing failures return an error response for provider retries.
+
+Generate the endpoint through its dispatch rule, for example:
+
+```django
+{% url stripe_payment_webhook %}
+```
+
+This provider-facing endpoint uses the verification described above rather than
+an administrator login.
+").
+
 
 -author("Marc Worrell <marc@worrell.nl>").
 
@@ -85,13 +110,9 @@ sync_session(#{
                 <<"id">> := _SessionId
             } = Session
         }
-    }, Context) ->
-    case m_payment_stripe_api:sync_payment_session_status(Session, Context) of
-        {ok, {_PaymentNr, _Status}} ->
-            ok;
-        {error, _} = Error ->
-            Error
-    end;
+    } = Event, Context) ->
+    m_payment_stripe_api:receive_session(Session, Event, Context);
+
 sync_session(Payload, _Context) ->
     ?LOG_ERROR(#{
         in => zotonic_mod_payment_stripe,
