@@ -17,6 +17,31 @@
 %% limitations under the License.
 
 -module(m_payment_stripe_api).
+-moduledoc(#{
+    zotonic_keywords => [
+        "reference", "backend_developer", "integrator", "model",
+        "payments", "api_and_integration"
+    ]
+}).
+-moduledoc("
+Create and synchronize Stripe payment-mode Checkout Sessions.
+
+This module exposes Erlang functions rather than template model paths.
+`create(PaymentId, Context)` creates a session for an existing local payment and
+returns `{ok, #payment_psp_handler{}}` or an error. Use the shared payment-request
+notification for ordinary checkout; recurring session creation is unsupported.
+
+For example, `m_payment_stripe_api:fetch_session(SessionId, Context)` returns
+`{ok, SessionMap}` or `{error, Reason}`. `sync_payment_session_status/2` retrieves
+and applies session status. `expire_payment_session/2` handles cancellation via
+the provider. `receive_session/3` feeds verified session data into shared payment
+receiving. API calls use `mod_payment_stripe.secret_key`.
+
+These functions are trusted server APIs without model-path ACL checks. Webhook
+signature verification belongs to `controller_stripe_webhook`, before event data
+reaches this module.
+").
+
 
 %% Exported for the documented HTTP contract tests in test/.
 -export([api_call/4]).

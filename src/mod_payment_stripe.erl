@@ -30,6 +30,35 @@
 %% limitations under the License.
 
 -module(mod_payment_stripe).
+-moduledoc(#{
+    zotonic_keywords => [
+        "reference", "backend_developer", "site_administrator", "module",
+        "payments", "configuration", "api_and_integration"
+    ]
+}).
+-moduledoc("
+Provide Stripe Checkout payments through `mod_payment`.
+
+Enable this module together with `mod_payment`. Configure `secret_key` and
+`webhook_secret` under **System → Payment configuration**, requiring
+`use.mod_admin_config`. Use credentials and a signing secret for the intended
+Stripe environment. Set
+`#payment_request{preferred_psp_module = mod_payment_stripe}` to select Stripe.
+This adapter creates payment-mode Checkout Sessions and does not create recurring
+subscriptions.
+
+Configure Stripe to deliver Checkout Session events to `/stripe/webhook`.
+Incoming requests are verified with `webhook_secret` before their session data is
+passed to the shared payment receive logic. The browser returns through
+`/stripe/ready/:payment_nr`; status is synchronized with the Stripe API.
+
+When `mod_payment.accept_unknown_payments` is enabled, verified webhooks may import
+unknown payments. Four-hour discovery additionally requires that
+`mod_payment.disable_unknown_payment_polling` is false. Discovery covers
+payment-mode Checkout Sessions within the shared retention window; direct Charges,
+PaymentIntents and subscriptions are not discovered.
+").
+
 
 -mod_title("Payments using Stripe").
 -mod_description("Payments using Payment Service Provider Stripe").

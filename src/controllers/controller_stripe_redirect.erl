@@ -20,6 +20,31 @@
 %% limitations under the License.
 
 -module(controller_stripe_redirect).
+-moduledoc(#{
+    zotonic_keywords => [
+        "reference", "backend_developer", "integrator", "controller",
+        "payments", "api_and_integration", "routing_and_redirects"
+    ]
+}).
+-moduledoc("
+Handle Stripe checkout callbacks.
+
+Handle GET returns at `/stripe/ready/:payment_nr`. For `status=ok`, fetch and
+synchronize the Checkout Session identified by `session_id`; for `status=cancel`,
+ask Stripe to expire the session. Redirect the visitor to `payment_psp_done` using
+the resulting local payment number. The query-string status alone does not mark a
+payment as paid.
+
+Generate the endpoint through its dispatch rule, for example:
+
+```django
+{% url stripe_payment_redirect payment_nr=payment_nr %}
+```
+
+This provider-facing endpoint uses the verification described above rather than
+an administrator login.
+").
+
 
 -export([
     allowed_methods/1,
